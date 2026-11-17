@@ -38,7 +38,132 @@ var INDEX = {
   "rtogi2": 31
 }
 
-var CHARACTERS = ["dog", "neko", "tora"]
+var CHARACTERS = ["neko", "tora", "dog", "cat-ginger", "cat-calico", "cat-tuxedo", "dog-golden", "dog-husky", "dog-corgi", "rat-gray", "rat-white", "panda", "panda-red", "horse-brown", "horse-white", "bird-blue", "bird-parrot", "fairy-pixie", "fairy-unicorn", "fairy-dragon"]
+
+var COLORFUL = {"cat-ginger": true, "cat-calico": true, "cat-tuxedo": true, "dog-golden": true, "dog-husky": true, "dog-corgi": true, "rat-gray": true, "rat-white": true, "panda": true, "panda-red": true, "horse-brown": true, "horse-white": true, "bird-blue": true, "bird-parrot": true, "fairy-pixie": true, "fairy-unicorn": true, "fairy-dragon": true}
+
+var CATALOG = [
+  {
+    "id": "neko",
+    "label": "Neko",
+    "group": "Themed",
+    "colorful": false
+  },
+  {
+    "id": "tora",
+    "label": "Tora",
+    "group": "Themed",
+    "colorful": false
+  },
+  {
+    "id": "dog",
+    "label": "Dog",
+    "group": "Themed",
+    "colorful": false
+  },
+  {
+    "id": "cat-ginger",
+    "label": "Ginger",
+    "group": "Cats",
+    "colorful": true
+  },
+  {
+    "id": "cat-calico",
+    "label": "Calico",
+    "group": "Cats",
+    "colorful": true
+  },
+  {
+    "id": "cat-tuxedo",
+    "label": "Tuxedo",
+    "group": "Cats",
+    "colorful": true
+  },
+  {
+    "id": "dog-golden",
+    "label": "Golden",
+    "group": "Dogs",
+    "colorful": true
+  },
+  {
+    "id": "dog-husky",
+    "label": "Husky",
+    "group": "Dogs",
+    "colorful": true
+  },
+  {
+    "id": "dog-corgi",
+    "label": "Corgi",
+    "group": "Dogs",
+    "colorful": true
+  },
+  {
+    "id": "rat-gray",
+    "label": "Gray Rat",
+    "group": "Rats",
+    "colorful": true
+  },
+  {
+    "id": "rat-white",
+    "label": "White Rat",
+    "group": "Rats",
+    "colorful": true
+  },
+  {
+    "id": "panda",
+    "label": "Panda",
+    "group": "Pandas",
+    "colorful": true
+  },
+  {
+    "id": "panda-red",
+    "label": "Red Panda",
+    "group": "Pandas",
+    "colorful": true
+  },
+  {
+    "id": "horse-brown",
+    "label": "Brown",
+    "group": "Horses",
+    "colorful": true
+  },
+  {
+    "id": "horse-white",
+    "label": "White",
+    "group": "Horses",
+    "colorful": true
+  },
+  {
+    "id": "bird-blue",
+    "label": "Bluebird",
+    "group": "Birds",
+    "colorful": true
+  },
+  {
+    "id": "bird-parrot",
+    "label": "Parrot",
+    "group": "Birds",
+    "colorful": true
+  },
+  {
+    "id": "fairy-pixie",
+    "label": "Fairy",
+    "group": "Fairy Tales",
+    "colorful": true
+  },
+  {
+    "id": "fairy-unicorn",
+    "label": "Unicorn",
+    "group": "Fairy Tales",
+    "colorful": true
+  },
+  {
+    "id": "fairy-dragon",
+    "label": "Dragon",
+    "group": "Fairy Tales",
+    "colorful": true
+  }
+]
 
 var POSES = {
   "stop": [

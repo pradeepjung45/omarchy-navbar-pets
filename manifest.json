@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "id": "io.github.tallsam.navbar-cat",
-  "name": "Navbar Cat",
-  "version": "1.2.0",
-  "author": "tallsam",
+  "id": "io.github.pradeepjung45.navbar-pets",
+  "name": "Navbar Pets",
+  "version": "1.0.0",
+  "author": "pradeepjung45",
   "license": "MIT",
-  "description": "A cat that walks along the bar, reacts to what you are doing, and can be petted",
+  "description": "Colourful pixel-art pets (cats, dogs, rats, pandas, horses, birds, and fairy-tale creatures) with scenic navbar themes, species treats, and autonomous play",
   "kinds": [
     "panel"
   ],

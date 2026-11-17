@@ -31,6 +31,7 @@ Item {
 
   implicitWidth: 16
   implicitHeight: 16
+  clip: true
 
   // The 16px sheet is a hand-tuned reduction; it beats letting the GPU shrink
   // the 32px art, but only while it is not itself being stretched. Past 16
@@ -40,6 +41,8 @@ Item {
   // anything else wants filtering, because fractional nearest-neighbour drops
   // and doubles rows at random.
   readonly property bool crisp: cell === width
+
+  readonly property bool isColor: !!(Frames.COLORFUL && Frames.COLORFUL[character])
 
   readonly property var pattern: Frames.POSES[pose] !== undefined
     ? Frames.POSES[pose]
@@ -63,9 +66,10 @@ Item {
     property color tint
 
     anchors.fill: parent
+    visible: !root.isColor
     // The layer renders into an item-sized texture, which crops the sheet to
     // the current frame without a separate clip pass.
-    layer.enabled: true
+    layer.enabled: !root.isColor
     layer.smooth: !root.crisp
     layer.effect: MultiEffect {
       colorization: 1.0
@@ -78,7 +82,7 @@ Item {
       //
       // Empty until the plugin knows where it lives on disk; asking for
       // "/cat32-fill.png" resolves against the filesystem root and warns.
-      source: root.assetDir === ""
+      source: (root.assetDir === "" || root.isColor)
         ? ""
         : root.assetDir + "/" + root.character + root.cell + "-" + sheetLayer.sheet + ".png"
       width: root.width * Frames.COUNT
@@ -93,4 +97,26 @@ Item {
 
   SheetLayer { sheet: "fill"; tint: root.fillColor }
   SheetLayer { sheet: "ink"; tint: root.inkColor }
+
+  // Full-color RGBA characters render directly without MultiEffect tinting,
+  // still cropped via an item-sized layer to avoid seam bleeding on fractional DPI.
+  Item {
+    anchors.fill: parent
+    visible: root.isColor
+    layer.enabled: root.isColor
+    layer.smooth: !root.crisp
+
+    Image {
+      source: (root.assetDir === "" || !root.isColor)
+        ? ""
+        : root.assetDir + "/" + root.character + root.cell + "-color.png"
+      width: root.width * Frames.COUNT
+      height: root.height
+      x: -root.frame * root.width
+      smooth: !root.crisp
+      mipmap: false
+      cache: true
+      fillMode: Image.Stretch
+    }
+  }
 }

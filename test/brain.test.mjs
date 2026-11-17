@@ -853,3 +853,29 @@ test("an unknown hour behaves like an ordinary day", () => {
   assert.equal(r.stirEveryScale, 1);
   assert.equal(r.brisk, false);
 });
+
+// ------------------------------------------------------------ food & playing
+
+test("food: animals sprint toward dropped food and chomp once they arrive", () => {
+  const running = decide({ food: { active: true, pos: 800 }, x: 100 });
+  assert.equal(running.reason, "food");
+  assert.equal(running.gait, "run");
+  assert.equal(running.pose, "right");
+
+  const eating = decide({ food: { active: true, pos: 800 }, x: 800 - CAT / 2, now: 10_000 });
+  assert.equal(eating.reason, "eat");
+  assert.equal(eating.gait, "idle");
+  assert.equal(eating.bob, true);
+  assert.ok(["wash", "yawn"].includes(eating.pose), `expected chomping pose, got ${eating.pose}`);
+});
+
+test("play: animals run to the play spot and hop playfully when together", () => {
+  const chasing = decide({ play: { active: true, target: 700 }, x: 200 });
+  assert.equal(chasing.reason, "play");
+  assert.equal(chasing.gait, "run");
+
+  const hopping = decide({ play: { active: true, target: 700 }, x: 700, now: 10_100 });
+  assert.equal(hopping.reason, "play");
+  assert.equal(hopping.bob, true);
+  assert.ok(hopping.lift > 0, "playing animals should hop");
+});

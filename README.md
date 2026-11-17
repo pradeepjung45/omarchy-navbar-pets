@@ -1,16 +1,10 @@
-# Navbar Cat
+# Navbar Pets
 
-[![Listed on omarchyplugins.com](https://img.shields.io/badge/omarchyplugins.com-Navbar%20Cat-4c9?style=flat-square)](https://omarchyplugins.com/plugin.html?id=io.github.tallsam.navbar-cat)
+[![Listed on omarchyplugins.com](https://img.shields.io/badge/omarchyplugins.com-Navbar%20Pets-4c9?style=flat-square)](https://omarchyplugins.com/plugin.html?id=io.github.pradeepjung45.navbar-pets)
 
-A cat that walks along the Omarchy bar.
+Colourful pixel-art pets — cats, dogs, rats, pandas, horses, birds, and fairy-tale creatures — that roam the Omarchy bar together, play, nap, eat species-matched treats, and explore scenic navbar themes (`Forest`, `Mountain`, `Space`, `Beach`, `Castle`).
 
-It roams the full width of the bar, reacts to what your machine is doing, takes
-your theme's colours, and can be petted. The sprites are the original
-[oneko](http://www.daidouji.com/oneko/) cat, and so is the behaviour: left
-alone, it sits, washes its face, scratches its head, yawns, and only then falls
-asleep.
-
-![Navbar Cat](preview.png)
+![Navbar Pets](preview.png)
 
 ## What it does
 
@@ -67,30 +61,32 @@ shell's own config mechanism, so they survive a restart.
 
 ## Characters
 
-Three sprite sets ship, all from oneko and all with the same 32 frames:
+Twenty characters ship across seven groups, all sharing the same 32 frames:
 
-| `character` | |
-|---|---|
-| `neko` (default) | the original cat |
-| `tora` | tiger-striped cat — the stripes take your theme's ink colour |
-| `dog` | a dog, for people who are wrong about cats |
+| Group | `character` | Style |
+|---|---|---|
+| **Themed** | `neko` (default), `tora`, `dog` | Two-tone, follows your active Omarchy theme colours |
+| **Cats** | `cat-ginger`, `cat-calico`, `cat-tuxedo` | Full-colour pixel art |
+| **Dogs** | `dog-golden`, `dog-husky`, `dog-corgi` | Full-colour pixel art |
+| **Rats** | `rat-gray`, `rat-white` | Full-colour pixel art |
+| **Pandas** | `panda`, `panda-red` | Full-colour pixel art |
+| **Horses** | `horse-brown`, `horse-white` | Full-colour pixel art |
+| **Birds** | `bird-blue`, `bird-parrot` | Full-colour pixel art (flapping wings) |
+| **Fairy Tales** | `fairy-pixie`, `fairy-unicorn`, `fairy-dragon` | Full-colour pixel art (wings, sparkles, horn, fire) |
 
 ## Install
 
-Listed in the community plugin directory:
-**[omarchyplugins.com › Navbar Cat](https://omarchyplugins.com/plugin.html?id=io.github.tallsam.navbar-cat)**
-
 ```bash
-omarchy plugin add https://github.com/tallsam/omarchy-navbar-cat.git --enable --yes
+omarchy plugin add https://github.com/pradeepjung45/omarchy-navbar-pets.git --enable --yes
 ```
 
 Or by hand:
 
 ```bash
-git clone https://github.com/tallsam/omarchy-navbar-cat.git \
-  ~/.config/omarchy/plugins/io.github.tallsam.navbar-cat
+git clone https://github.com/pradeepjung45/omarchy-navbar-pets.git \
+  ~/.config/omarchy/plugins/io.github.pradeepjung45.navbar-pets
 omarchy-shell shell rescanPlugins
-omarchy plugin enable io.github.tallsam.navbar-cat
+omarchy plugin enable io.github.pradeepjung45.navbar-pets
 ```
 
 ### Requirements
@@ -102,14 +98,14 @@ outside the plugin's own directory.
 ### Removal
 
 ```bash
-omarchy plugin remove io.github.tallsam.navbar-cat
+omarchy plugin remove io.github.pradeepjung45.navbar-pets
 ```
 
 Or by hand:
 
 ```bash
-omarchy plugin disable io.github.tallsam.navbar-cat
-rm -rf ~/.config/omarchy/plugins/io.github.tallsam.navbar-cat
+omarchy plugin disable io.github.pradeepjung45.navbar-pets
+rm -rf ~/.config/omarchy/plugins/io.github.pradeepjung45.navbar-pets
 omarchy-shell shell rescanPlugins
 ```
 
@@ -130,10 +126,13 @@ Settings go inline on the plugin's entry in `~/.config/omarchy/shell.json`:
 {
   "plugins": [
     {
-      "id": "io.github.tallsam.navbar-cat",
-      "character": "neko",
+      "id": "io.github.pradeepjung45.navbar-pets",
+      "characters": ["cat-ginger", "dog-golden", "panda", "bird-blue", "fairy-unicorn"],
+      "backdrop": "mountain",
+      "foodDot": true,
+      "autoPlay": true,
       "speed": 1.0,
-      "size": 16,
+      "size": 24,
       "pettable": true,
       "chaseCursor": true,
       "pounce": true,
@@ -154,7 +153,11 @@ Settings go inline on the plugin's entry in `~/.config/omarchy/shell.json`:
 
 | Key | Default | Meaning |
 |---|---|---|
-| `character` | `"neko"` | `neko`, `tora`, or `dog` |
+| `character` | `"neko"` | Character ID (`neko`, `tora`, `dog`, `cat-ginger`, `cat-calico`, `cat-tuxedo`, `dog-golden`, `dog-husky`, `dog-corgi`, `rat-gray`, `rat-white`, `panda`, `panda-red`, `horse-brown`, `horse-white`, `bird-blue`, `bird-parrot`, `fairy-pixie`, `fairy-unicorn`, `fairy-dragon`) |
+| `characters` | `["neko"]` | Array of character IDs to roam the bar together |
+| `backdrop` | `"none"` | Optional pixel-art navbar landscape (`"none"`, `"forest"`, `"mountain"`, `"space"`, `"beach"`, `"castle"`) |
+| `foodDot` | `true` | Show a small clickable food dot on the bar that drops species-matched treats |
+| `autoPlay` | `true` | When multiple pets are active, let them play tag and hop together on their own |
 | `speed` | `1.0` | Multiplier on walking and running pace |
 | `size` | `16` | Cat height in logical pixels |
 | `pettable` | `true` | Whether the cat can be clicked |
@@ -197,11 +200,13 @@ timer, and the pointer sampler slows down to match.
 | File | Role |
 |---|---|
 | `Cat.qml` | The panel: window, monitor tracking, event sources, tick loop |
-| `CatSprite.qml` | Frame selection, sheet choice, two-tone theming |
+| `CatSprite.qml` | Frame selection, sheet choice, two-tone & full-colour rendering |
 | `CatMenu.qml` | The right-click menu surface |
 | `Brain.js` | All the behaviour, as a pure function — the tested part |
 | `bin/navbar-cat-cursor` | Pointer sampler |
-| `tools/build-sprites.py` | XBM → spritesheets (only needed to change the art) |
+| `tools/build-sprites.py` | Generates spritesheets & `Frames.js` (stdlib only, no PIL required) |
+| `tools/animal_sprites.py` | Colourful pixel-art definitions & 32→16 downscaler |
+| `tools/build-themes.py` | Generates seamless 480×32 pixel-art navbar theme strips |
 | `tools/build-preview.py` | Renders `preview.png` from the shipped sheets |
 
 `Brain.js` takes a snapshot of the world and returns what the cat should be

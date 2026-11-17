@@ -1,126 +1,112 @@
 #!/usr/bin/env python3
-"""Render preview.png — the marketplace card for this plugin.
+"""Render preview.png (1200x630) — the marketplace & social preview card.
 
-Everything drawn here comes from the shipped spritesheets and is composited the
-same way the plugin composites it at runtime: the fill sheet tinted with the
-bar's text colour, the ink sheet painted over it in the bar's background
-colour. Nothing is redrawn or touched up, so what the card shows is what the
-plugin actually puts on your bar.
-
-The sprites are drawn at several multiples of their real size because a 16px
-cat is illegible on a marketplace card. The strip along the top is rendered at
-true scale to keep that honest.
+Uses ImageMagick (`magick`) and the shipped spritesheets in `assets/` so it runs
+without requiring third-party Python packages like Pillow.
 """
 
-import sys
 from pathlib import Path
-
-from PIL import Image, ImageDraw, ImageFont
+import subprocess
+import tempfile
 
 REPO = Path(__file__).resolve().parent.parent
 ASSETS = REPO / "assets"
 OUT = REPO / "preview.png"
 
-# Omarchy's default dark bar, so the card reads the same for everyone rather
-# than depending on whatever theme happened to be active when it was made.
-BG = (16, 19, 21)
-BAR = (24, 28, 31)
-TEXT = (202, 204, 204)
-MUTED = (112, 120, 128)
-
-W, H = 1200, 630
 CELL = 32
+INDEX = {
+    "mati2": 0, "jare2": 1, "kaki1": 2, "mati3": 4, "sleep1": 5,
+    "left1": 12, "right1": 14, "right2": 15, "upright1": 18,
+}
 
-FONT_DIR = Path("/usr/share/fonts/TTF")
-FONT_CANDIDATES = [
-    "CaskaydiaMonoNerdFont-Regular.ttf",
-    "CaskaydiaMonoNerdFont-SemiLight.ttf",
-    "CaskaydiaMonoNerdFont-ExtraLight.ttf",
+SHOWCASE = [
+    ("cat-ginger",    "Ginger Cat",   "right1"),
+    ("cat-calico",    "Calico Cat",   "mati2"),
+    ("cat-tuxedo",    "Tuxedo Cat",   "jare2"),
+    ("dog-golden",    "Golden Dog",   "right1"),
+    ("dog-husky",     "Husky",        "mati2"),
+    ("dog-corgi",     "Corgi",        "right2"),
+    ("rat-gray",      "Gray Rat",     "right1"),
+    ("rat-white",     "White Rat",    "mati2"),
+    ("panda",         "Panda",        "jare2"),
+    ("panda-red",     "Red Panda",    "right1"),
+    ("horse-brown",   "Brown Horse",  "right1"),
+    ("horse-white",   "White Horse",  "mati2"),
+    ("bird-blue",     "Bluebird",     "right1"),
+    ("bird-parrot",   "Parrot",       "right2"),
+    ("fairy-pixie",   "Fairy",        "mati2"),
+    ("fairy-unicorn", "Unicorn",      "right1"),
+    ("fairy-dragon",  "Dragon",       "jare2"),
 ]
 
 
-def font(size):
-    for name in FONT_CANDIDATES:
-        path = FONT_DIR / name
-        if path.exists():
-            return ImageFont.truetype(str(path), size)
-    return ImageFont.load_default()
-
-
-def frames(character):
-    """Load the 32px fill and ink sheets for a character."""
-    fill = Image.open(ASSETS / f"{character}32-fill.png").convert("RGBA")
-    ink = Image.open(ASSETS / f"{character}32-ink.png").convert("RGBA")
-    return fill, ink
-
-
-def sprite(character, index, scale, fill_rgb, ink_rgb):
-    """Composite one frame exactly as CatSprite.qml does, at `scale`x."""
-    fill, ink = frames(character)
-    box = (index * CELL, 0, (index + 1) * CELL, CELL)
-    out = Image.new("RGBA", (CELL, CELL), (0, 0, 0, 0))
-    for sheet, rgb in ((fill, fill_rgb), (ink, ink_rgb)):
-        layer = Image.new("RGBA", (CELL, CELL), rgb + (0,))
-        layer.putalpha(sheet.crop(box).getchannel("A"))
-        out.alpha_composite(layer)
-    return out.resize((CELL * scale, CELL * scale), Image.NEAREST)
-
-
-# Frame indices, matching Frames.js / the FRAMES list in build-sprites.py.
-INDEX = {
-    "mati2": 0, "jare2": 1, "kaki1": 2, "mati3": 4, "sleep1": 5,
-    "left1": 12, "right1": 14, "right2": 15, "dwright1": 22, "upright1": 18,
-}
+def crop_frame(tmp_dir, char_id, frame_name, scale):
+    idx = INDEX[frame_name]
+    out_path = tmp_dir / f"{char_id}_{frame_name}_{scale}.png"
+    sheet = ASSETS / f"{char_id}32-color.png"
+    subprocess.run([
+        "magick", str(sheet),
+        "-crop", f"{CELL}x{CELL}+{idx * CELL}+0", "+repage",
+        "-filter", "Point", "-resize", f"{scale * 100}%",
+        str(out_path),
+    ], check=True)
+    return out_path
 
 
 def main():
-    if not (ASSETS / "neko32-fill.png").exists():
-        sys.exit("run tools/build-sprites.py first")
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        font_path = Path("/usr/share/fonts/TTF/CaskaydiaMonoNerdFont-Regular.ttf")
+        font_args = ["-font", str(font_path)] if font_path.exists() else []
+        cmd = [
+            "magick", "-size", "1200x630", "xc:#101315",
+            # Top bar strip
+            "-fill", "#181c1f", "-draw", "rectangle 0,148 1200,196",
+            "-fill", "#262c32", "-draw", "rectangle 0,196 1200,197",
+            # Food dot + treat on bar
+            "-fill", "#562812", "-draw", "circle 240,172 246,172",
+            "-fill", "#F49238", "-draw", "circle 240,172 245,172",
+            "-fill", "#FFE2B2", "-draw", "circle 238,170 240,170",
+            # Header text
+            *font_args,
+            "-fill", "#eef2f6", "-pointsize", "42",
+            "-annotate", "+56+68", "Navbar Pets",
+            "-fill", "#8c96a2", "-pointsize", "20",
+            "-annotate", "+56+108",
+            "20 colourful pixel-art pets for the Omarchy bar  -  multi-pet  -  feed & play",
+            "-fill", "#6c7682", "-pointsize", "15",
+            "-annotate", "+56+178", "live bar",
+        ]
 
-    card = Image.new("RGB", (W, H), BG)
-    draw = ImageDraw.Draw(card)
+        # Paste active pets along the top bar strip at 1x (32px)
+        bar_pets = [
+            ("dog-golden", "right1", 310),
+            ("cat-ginger", "right2", 420),
+            ("panda", "jare2", 560),
+            ("bird-blue", "right1", 720),
+            ("fairy-unicorn", "right1", 860),
+            ("fairy-dragon", "jare2", 1010),
+        ]
+        for cid, pose, x in bar_pets:
+            sp = crop_frame(tmp, cid, pose, 1)
+            cmd += [str(sp), "-geometry", f"+{x}+156", "-composite"]
 
-    title = font(46)
-    body = font(21)
-    label = font(19)
+        # Grid of 17 colorful characters in 2 rows (9 on row 1, 8 on row 2) at 2.5x (80px)
+        for i, (cid, label, pose) in enumerate(SHOWCASE):
+            row = 0 if i < 9 else 1
+            col = i if i < 9 else i - 9
+            x = 48 + col * 124 + (60 if row == 1 else 0)
+            y = 235 if row == 0 else 415
+            sp = crop_frame(tmp, cid, pose, 2)
+            cmd += [
+                str(sp), "-geometry", f"+{x + 16}+{y}", "-composite",
+                "-fill", "#c8d0d8", "-pointsize", "14",
+                "-annotate", f"+{x}+{y + 88}", label,
+            ]
 
-    draw.text((60, 48), "Navbar Cat", font=title, fill=TEXT)
-    draw.text((60, 108), "a cat that walks along your Omarchy bar",
-              font=body, fill=MUTED)
-
-    # A true-scale bar strip: this is the size the cat actually is.
-    bar_y, bar_h = 170, 42
-    draw.rectangle([0, bar_y, W, bar_y + bar_h], fill=BAR)
-    for x, idx in ((300, 14), (520, 15), (760, 0), (980, 5)):
-        card.paste(sprite("neko", idx, 1, TEXT, BAR), (x, bar_y + 13),
-                   sprite("neko", idx, 1, TEXT, BAR))
-    draw.text((60, bar_y + 13), "actual size", font=label, fill=MUTED)
-
-    # Poses, big enough to see.
-    poses = [("right1", "walks"), ("mati2", "sits"), ("jare2", "washes"),
-             ("kaki1", "scratches"), ("sleep1", "sleeps"), ("upright1", "pounces")]
-    y = 290
-    for i, (frame, name) in enumerate(poses):
-        x = 60 + i * 185
-        card.paste(sprite("neko", INDEX[frame], 3, TEXT, BAR), (x, y),
-                   sprite("neko", INDEX[frame], 3, TEXT, BAR))
-        draw.text((x, y + 108), name, font=label, fill=MUTED)
-
-    # The three characters.
-    y = 452
-    draw.text((60, y), "three characters", font=label, fill=MUTED)
-    for i, character in enumerate(("neko", "tora", "dog")):
-        x = 60 + i * 185
-        card.paste(sprite(character, INDEX["right1"], 3, TEXT, BAR), (x, y + 34),
-                   sprite(character, INDEX["right1"], 3, TEXT, BAR))
-        draw.text((x, y + 142), character, font=label, fill=MUTED)
-
-    draw.text((640, y + 60), "takes your theme's colours", font=body, fill=MUTED)
-    draw.text((640, y + 96), "chases and is pettable", font=body, fill=MUTED)
-    draw.text((640, y + 132), "public-domain oneko sprites", font=body, fill=MUTED)
-
-    card.save(OUT)
-    print(f"wrote {OUT.relative_to(REPO)} ({card.width}x{card.height})")
+        cmd.append(str(OUT))
+        subprocess.run(cmd, check=True)
+        print(f"wrote {OUT.relative_to(REPO)} (1200x630)")
 
 
 if __name__ == "__main__":

@@ -189,6 +189,53 @@ function intent(input, state) {
     }
   }
 
+  // 1b. Food dropped on the bar — sprint to it and chomp until it is gone.
+  if (input.food && input.food.active && isFinite(Number(input.food.pos))) {
+    var foodTarget = clamp(Number(input.food.pos) - input.catSize / 2, 0, maxX)
+    if (Math.abs(input.x - foodTarget) <= ARRIVE_EPS + 6) {
+      return {
+        reason: "eat",
+        target: foodTarget,
+        gait: "idle",
+        rest: "hold",
+        pose: ((Math.floor(now / 180) & 1) === 0) ? "wash" : "yawn",
+        bob: true,
+      }
+    }
+    return {
+      reason: "food",
+      target: foodTarget,
+      gait: "run",
+      rest: "wait",
+    }
+  }
+
+  // 1c. Playing together with other animals on the bar.
+  if (input.play && input.play.active && isFinite(Number(input.play.target))) {
+    var playTarget = clamp(Number(input.play.target), 0, maxX)
+    var playLift = Number(input.play.lift) > 0
+      ? Number(input.play.lift)
+      : 0.45 * Math.abs(Math.sin(now / 120))
+    if (Math.abs(input.x - playTarget) <= ARRIVE_EPS + 4) {
+      return {
+        reason: "play",
+        target: playTarget,
+        gait: "idle",
+        rest: "hold",
+        pose: ((Math.floor(now / 180) & 1) === 0) ? "scratch" : "awake",
+        bob: true,
+        lift: playLift,
+      }
+    }
+    return {
+      reason: "play",
+      target: playTarget,
+      gait: "run",
+      rest: "wait",
+      lift: Number(input.play.lift) > 0 ? Number(input.play.lift) : 0,
+    }
+  }
+
   // 2. Pointer on the bar.
   if (config.chaseCursor !== false && input.pointer && input.pointer.onBar) {
     return {
@@ -292,16 +339,11 @@ function intent(input, state) {
     }
   }
 
-  // 6. On AC power — get drowsy, and sleep wherever it happens to be.
-  //
-  //    This used to march the cat to the right third of the bar, on the theory
-  //    that it was napping by the power widget. In practice it meant the cat
-  //    always slept in the same spot, and worse, that a cat which had stirred
-  //    and wandered off would trudge all the way back before settling. Cats
-  //    sleep where they are.
-  if (reactions.charging !== false && input.charging) {
+  // 6. On AC power (or an individual animal taking a solo rest break) — get
+  //    drowsy, and settle wherever it happens to be.
+  if (input.soloRest === true || (reactions.charging !== false && input.charging)) {
     return {
-      reason: "charging",
+      reason: input.soloRest === true ? "rest" : "charging",
       target: input.x,
       gait: "idle",
       rest: "chain",
@@ -413,8 +455,12 @@ function decide(input, state) {
     state.stirUntil = null
   }
 
-  // Rouse the cat before it moves, the way oneko does.
-  if (moving && RESTING[state.pose] && (state.wokeAt === null || state.wokeAt === undefined)) {
+  // Rouse the cat before it moves, the way oneko does (except when bolting for
+  // food or group play, which should start immediately).
+  var urgentMove = want.reason === "food" || want.reason === "play"
+  if (urgentMove) {
+    state.wokeAt = null
+  } else if (moving && RESTING[state.pose] && (state.wokeAt === null || state.wokeAt === undefined)) {
     state.wokeAt = now
   }
   if (state.wokeAt !== null && state.wokeAt !== undefined) {
@@ -436,12 +482,15 @@ function decide(input, state) {
     state.restKey = null
     state.restStartedAt = null
     state.lastDir = delta > 0 ? 1 : -1
-    state.pose = vertical
-      ? (delta > 0 ? "down" : "up")
-      : (delta > 0 ? "right" : "left")
+    var moveLift = want.lift || 0
+    state.pose = (want.reason === "play" && moveLift > 0.25)
+      ? leapPose(edge, state.lastDir, 1)
+      : (vertical
+          ? (delta > 0 ? "down" : "up")
+          : (delta > 0 ? "right" : "left"))
     return {
       reason: want.reason, target: target, gait: want.gait, pose: state.pose,
-      lift: 0, snap: false, bob: false, pettable: false, idle: false,
+      lift: moveLift, snap: false, bob: want.reason === "play", pettable: false, idle: false,
       wakeIn: 0, state: state,
     }
   }
@@ -461,7 +510,8 @@ function decide(input, state) {
     pose = "stop"
   } else {
     pose = chainPose(elapsed)
-    if (!want.sleepy && pose === "sleep") {
+    var restLimit = Number(config.restLimitMs) > 0 ? Number(config.restLimitMs) : 2200
+    if (!want.sleepy && (pose === "sleep" || (config.lively === true && elapsed > restLimit))) {
       // A cat that is merely idle, not tired, gets bored and moves on rather
       // than dropping off — sleep is rung 6's job.
       state.wanderTarget = null
@@ -494,7 +544,7 @@ function decide(input, state) {
     target: target,
     gait: "idle",
     pose: pose,
-    lift: 0,
+    lift: want.lift || 0,
     snap: false,
     bob: want.bob === true,
     pettable: config.pettable !== false,

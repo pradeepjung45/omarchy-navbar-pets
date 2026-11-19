@@ -56,40 +56,60 @@ def crop_frame(tmp_dir, char_id, frame_name, scale):
 def main():
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
-        font_path = Path("/usr/share/fonts/TTF/CaskaydiaMonoNerdFont-Regular.ttf")
-        font_args = ["-font", str(font_path)] if font_path.exists() else []
+        font_candidates = [
+            Path("/usr/share/fonts/TTF/JetBrainsMonoNerdFont-Regular.ttf"),
+            Path("/usr/share/fonts/TTF/CaskaydiaMonoNerdFont-Regular.ttf"),
+            Path("/usr/share/fonts/liberation/LiberationSans-Bold.ttf"),
+        ]
+        font_path = next((p for p in font_candidates if p.exists()), None)
+        font_args = ["-font", str(font_path)] if font_path else []
+        # Build a tiled 1200x48 mountain-forest panorama backdrop for the live bar preview
+        bar_bg = tmp / "bar_bg.png"
+        subprocess.run([
+            "magick", "-size", "1200x32", f"tile:{ASSETS / 'theme-mountain.png'}",
+            "-filter", "Point", "-resize", "1200x48!",
+            "-alpha", "set", "-channel", "A", "-evaluate", "multiply", "0.52", "+channel",
+            str(bar_bg),
+        ], check=True)
+
         cmd = [
             "magick", "-size", "1200x630", "xc:#101315",
             # Top bar strip
-            "-fill", "#181c1f", "-draw", "rectangle 0,148 1200,196",
+            "-fill", "#161b22", "-draw", "rectangle 0,144 1200,196",
+            str(bar_bg), "-geometry", "+0+148", "-composite",
             "-fill", "#262c32", "-draw", "rectangle 0,196 1200,197",
-            # Food dot + treat on bar
-            "-fill", "#562812", "-draw", "circle 240,172 246,172",
-            "-fill", "#F49238", "-draw", "circle 240,172 245,172",
-            "-fill", "#FFE2B2", "-draw", "circle 238,170 240,170",
+            # Food dot + bouncing tennis ball on bar
+            "-fill", "#562812", "-draw", "circle 210,172 216,172",
+            "-fill", "#F49238", "-draw", "circle 210,172 215,172",
+            "-fill", "#FFE2B2", "-draw", "circle 208,170 210,170",
+            "-fill", "#365314", "-draw", "circle 516,164 523,164",
+            "-fill", "#A3E635", "-draw", "circle 516,164 522,164",
+            "-fill", "#FFFFFF", "-draw", "circle 514,162 515,162",
             # Header text
             *font_args,
             "-fill", "#eef2f6", "-pointsize", "42",
             "-annotate", "+56+68", "Navbar Pets",
-            "-fill", "#8c96a2", "-pointsize", "20",
+            "-fill", "#8c96a2", "-pointsize", "19",
             "-annotate", "+56+108",
-            "20 colourful pixel-art pets for the Omarchy bar  -  multi-pet  -  feed & play",
-            "-fill", "#6c7682", "-pointsize", "15",
-            "-annotate", "+56+178", "live bar",
+            "20 colourful pets for Omarchy  -  bouncing ball  -  species treats  -  5 pixel themes",
+            "-fill", "#94a3b8", "-pointsize", "14",
+            "-annotate", "+56+176", "1  2  3",
         ]
 
-        # Paste active pets along the top bar strip at 1x (32px)
+        # Paste active pets along the top bar strip at 1.5x (48px):
+        # grounded horses/cats/dogs/pandas on the floor, bluebird flying high!
         bar_pets = [
-            ("dog-golden", "right1", 310),
-            ("cat-ginger", "right2", 420),
-            ("panda", "jare2", 560),
-            ("bird-blue", "right1", 720),
-            ("fairy-unicorn", "right1", 860),
-            ("fairy-dragon", "jare2", 1010),
+            ("dog-golden",    "right1", 260, 149),
+            ("cat-ginger",    "right2", 380, 149),
+            ("horse-brown",   "right1", 560, 149),
+            ("bird-blue",     "right1", 695, 142),
+            ("panda",         "sleep1", 815, 149),
+            ("fairy-unicorn", "right1", 935, 149),
+            ("fairy-dragon",  "jare2",  1065, 149),
         ]
-        for cid, pose, x in bar_pets:
+        for cid, pose, x, y in bar_pets:
             sp = crop_frame(tmp, cid, pose, 1)
-            cmd += [str(sp), "-geometry", f"+{x}+156", "-composite"]
+            cmd += [str(sp), "-geometry", f"+{x}+{y + 15}", "-composite"]
 
         # Grid of 17 colorful characters in 2 rows (9 on row 1, 8 on row 2) at 2.5x (80px)
         for i, (cid, label, pose) in enumerate(SHOWCASE):

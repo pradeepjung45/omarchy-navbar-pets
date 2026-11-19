@@ -159,9 +159,12 @@ Item {
   }
 
   // Multiple animals can roam the bar simultaneously (`characters: [...]`),
-  // while falling back cleanly to the single `character` key.
-  readonly property var characters: {
-    var rev = root.configRevision
+  // while falling back cleanly to the single `character` key. Keep the array
+  // reference stable unless the actual character list changes so switching
+  // themes or settings never tears down and resets active pet delegates.
+  property var characters: ["neko"]
+
+  function syncCharacters() {
     var raw = config.characters
     var out = []
     if (Array.isArray(raw)) {
@@ -176,8 +179,12 @@ Item {
       var wanted = String(config.character || "neko")
       out.push(Frames.CHARACTERS.indexOf(wanted) !== -1 ? wanted : "neko")
     }
-    return out
+    if (out.join(",") !== root.characters.join(",")) {
+      root.characters = out
+    }
   }
+
+  onConfigRevisionChanged: syncCharacters()
 
   readonly property string character: characters[0] || "neko"
   onCharactersChanged: Qt.callLater(root.step)
@@ -370,12 +377,19 @@ Item {
     return "fish"
   }
 
-  // Group play state: when 2+ animals are active they periodically (or on
-  // demand) chase each other and hop together.
+  // Group play & bouncing ball toy state: clicking Play tosses a real physics
+  // ball across the bar that bounces off the floor and edges; pets sprint to
+  // intercept and bat it back into the air!
   property real playUntil: -1
   property real playSpot: 0
   property real playPhaseUpdatedAt: 0
   property real nextAutoPlayAt: Date.now() + 4000
+  property bool ballActive: false
+  property real ballPos: 0
+  property real ballY: 0
+  property real ballVx: 0
+  property real ballVy: 0
+  property real ballLastHitAt: 0
 
   readonly property real feederPos: Math.max(catSize, Math.round(barLength * 0.24))
 
@@ -399,6 +413,7 @@ Item {
       a.alertUntil = now + 550
     }
     foodActive = true
+    ballActive = false
     playUntil = -1
     nudge()
     return String(Math.round(foodPos))
@@ -407,16 +422,25 @@ Item {
   function startPlay(durationMs) {
     var maxPos = Math.max(0, barLength - catSize)
     var now = Date.now()
-    var baseDur = Number(durationMs) > 0 ? Number(durationMs) : 8500
+    var baseDur = Number(durationMs) > 0 ? Number(durationMs) : 11000
     var list = root.characters
-    var sharedCenter = Brain.pickSpot(_ensureActor(character, 0, maxPos).brainState, maxPos, barLength, avoidCenter)
+    var actor0 = _ensureActor(character, 0, maxPos)
+    var launchPos = Brain.pickSpot(actor0.brainState, maxPos, barLength, avoidCenter)
+    var dir = launchPos < barLength * 0.5 ? 1 : -1
+    ballPos = Math.max(catSize, Math.min(barLength - catSize, launchPos))
+    ballY = Math.max(8, barSize * 0.65)
+    ballVx = dir * (135 + (now % 45))
+    ballVy = 78
+    ballLastHitAt = 0
+    ballActive = true
     for (var i = 0; i < list.length; i++) {
       var a = _ensureActor(list[i], i, maxPos)
       a.mood = "play"
-      a.playCenter = Math.max(catSize * 2, Math.min(maxPos - catSize * 2, sharedCenter + (i - (list.length - 1) / 2) * 55))
+      a.alertUntil = now + 450
+      a.playCenter = Math.max(catSize * 2, Math.min(maxPos - catSize * 2, launchPos + (i - (list.length - 1) / 2) * 55))
       a.moodUntil = now + baseDur + (i % 3) * 1400
     }
-    playSpot = sharedCenter
+    playSpot = launchPos
     playPhaseUpdatedAt = now
     playUntil = now + baseDur
     nextAutoPlayAt = playUntil + 12000
@@ -542,6 +566,16 @@ Item {
     return actor
   }
 
+  function speciesSpeedFactor(charId) {
+    if (charId === "horse-brown" || charId === "horse-white" || charId === "fairy-unicorn") return 1.24
+    if (charId === "bird-blue" || charId === "bird-parrot") return 1.22
+    if (charId === "rat-gray" || charId === "rat-white") return 1.18
+    if (charId === "fairy-pixie" || charId === "fairy-dragon") return 1.12
+    if (charId === "dog" || charId.indexOf("dog-") === 0) return 1.08
+    if (charId === "panda" || charId === "panda-red") return 0.78
+    return 1.0
+  }
+
   function isBirdChar(charId) {
     return charId === "bird-blue" || charId === "bird-parrot"
   }
@@ -558,6 +592,7 @@ Item {
     if (!catScreen || barLength <= 0) return
 
     var now = Date.now()
+    var dt = tickMs / 1000
     var maxPos = Math.max(0, barLength - catSize)
     var onBar = pointerOnBar()
     var pPos = pointerAlongBar()
@@ -568,6 +603,42 @@ Item {
     var eatingCount = 0
 
     var globalPlay = !foodActive && now < playUntil
+
+    // Update bouncing ball physics while active.
+    if (ballActive) {
+      if (!globalPlay || foodActive) {
+        ballActive = false
+      } else {
+        ballPos += ballVx * dt
+        var ballMin = 8
+        var ballMax = Math.max(ballMin, barLength - 8)
+        if (ballPos <= ballMin) {
+          ballPos = ballMin
+          ballVx = Math.abs(ballVx) * 0.82
+        } else if (ballPos >= ballMax) {
+          ballPos = ballMax
+          ballVx = -Math.abs(ballVx) * 0.82
+        }
+        ballVy -= 360 * dt
+        ballY += ballVy * dt
+        var maxBallY = Math.max(6, barSize - 10)
+        if (ballY > maxBallY) {
+          ballY = maxBallY
+          ballVy = -Math.abs(ballVy) * 0.5
+        }
+        if (ballY <= 0) {
+          ballY = 0
+          if (Math.abs(ballVy) > 22) {
+            ballVy = Math.abs(ballVy) * 0.68
+          } else {
+            ballVy = 0
+            ballVx *= 0.96
+          }
+        }
+        playSpot = Math.max(0, Math.min(maxPos, ballPos - catSize / 2))
+        everyIdle = false
+      }
+    }
 
     for (var i = 0; i < count; i++) {
       var charId = list[i]
@@ -580,6 +651,18 @@ Item {
         foodWinner = charId
       }
       var chasingFood = foodActive && (foodWinner === "" || foodWinner === charId)
+
+      // If a pet catches the bouncing ball, bat it back across the navbar!
+      if (ballActive && now - ballLastHitAt > 550
+          && Math.abs((actor.pos + catSize / 2) - ballPos) <= catSize * 0.6
+          && ballY <= 7) {
+        var kickDir = (ballPos < barLength * 0.25) ? 1
+          : (ballPos > barLength * 0.75 ? -1 : (ballVx >= 0 ? -1 : 1))
+        ballVx = kickDir * (125 + ((now + i * 37) % 65))
+        ballVy = 85 + ((now + i * 19) % 35)
+        ballLastHitAt = now
+        actor.heartUntil = now + 800
+      }
 
       // Each animal rolls its own independent mood ("wander", "play", or "rest")
       // when its personal timer expires, so while one rests/naps, others play or stroll!
@@ -607,19 +690,20 @@ Item {
       // When the pointer is on the navbar, all animals follow the pointer along
       // the bar; when the pointer leaves the bar, each animal resumes its own
       // independent mood (playing, strolling, or resting).
-      var wantsCursor = onBar && chaseCursor && !catMenu.open && !chasingFood
+      var wantsCursor = onBar && chaseCursor && !catMenu.open && !chasingFood && !ballActive
       var actorPlaying = !chasingFood && !wantsCursor && (globalPlay || (autoPlay && actor.mood === "play"))
       var actorResting = !chasingFood && !wantsCursor && !actorPlaying && actor.mood === "rest"
 
-      // Spread multiple animals around the cursor, and weave smoothly during
-      // play. Only birds soar in the air; heavy land animals (horses, unicorns,
-      // pandas) gallop strictly on the ground; agile pets take tiny playful skips.
+      // Spread multiple animals around the cursor, chase the bouncing ball when
+      // active, or weave smoothly during independent play.
       var spread = (i - (count - 1) / 2) * (catSize + 4)
       var charPointerPos = Math.max(catSize / 2, Math.min(barLength - catSize / 2, pPos + spread))
       var centerForPlay = globalPlay ? playSpot : actor.playCenter
       var playRadius = Math.max(catSize * 2, Math.min(110, maxPos * 0.15))
       var playWave = Math.sin(now / (1250 / actor.speedScale) + i * 2.15)
-      var charPlayTarget = Math.max(0, Math.min(maxPos, centerForPlay + playWave * playRadius))
+      var charPlayTarget = ballActive
+        ? Math.max(0, Math.min(maxPos, ballPos - catSize / 2 + (i % 3 - 1) * 6))
+        : Math.max(0, Math.min(maxPos, centerForPlay + playWave * playRadius))
       var leapSin = Math.sin(now / 520 + i * 1.9)
       var charIsBird = isBirdChar(charId)
       var charIsHeavyLand = isHeavyLandChar(charId)
@@ -683,20 +767,25 @@ Item {
           : Math.max(0, targetPos - notifyOffset)
       }
 
+      var speciesMult = speciesSpeedFactor(charId)
+      var isSprinting = false
       if (decision.snap) {
         actor.pos = targetPos
       } else {
         var stepSpeed = decision.reason === "food"
           ? 92
-          : (decision.reason === "play"
-              ? 68
-              : (decision.gait === "run" ? 64 : (decision.gait === "walk" ? 34 : 0)))
-        var stepPx = stepSpeed * actor.speedScale * speed * (tickMs / 1000)
+          : (ballActive
+              ? 88
+              : (decision.reason === "play"
+                  ? 68
+                  : (decision.gait === "run" ? 64 : (decision.gait === "walk" ? 34 : 0))))
+        var stepPx = stepSpeed * speciesMult * actor.speedScale * speed * dt
         var delta = targetPos - actor.pos
         if (stepPx > 0 && Math.abs(delta) > 0.5) {
           actor.pos = Math.abs(delta) <= stepPx
             ? targetPos
             : actor.pos + (delta > 0 ? stepPx : -stepPx)
+          isSprinting = stepSpeed >= 64
         }
       }
       actor.pos = Math.max(0, Math.min(maxPos, actor.pos))
@@ -714,7 +803,9 @@ Item {
         delegate.animOffset = actor.animOffset
         delegate.showHeart = now < actor.heartUntil
         delegate.heartProgress = now < actor.heartUntil ? 1 - (actor.heartUntil - now) / 1000 : 0
-        delegate.showAlert = chasingFood && now < actor.alertUntil
+        delegate.showAlert = (chasingFood || ballActive) && now < actor.alertUntil
+        delegate.isDancing = decision.reason === "music"
+        delegate.isSprinting = isSprinting
       }
 
       if (i === 0) {
@@ -783,6 +874,7 @@ Item {
   }
 
   Component.onCompleted: {
+    syncCharacters()
     lastPointerMoveAt = Date.now()
     var workspace = Hyprland.focusedWorkspace
     if (workspace) _lastWorkspaceId = Number(workspace.id)
@@ -1044,13 +1136,16 @@ Item {
     // and flickering torches). Completely click-through.
     Item {
       id: navbarBackdrop
+      z: 0
       visible: root.backdrop !== "none" && !root.barHidden && !root.vertical
       anchors.fill: parent
       clip: true
 
       readonly property int slotCount: Math.max(8, Math.floor(window.width / 80))
 
-      // Seamless 480x32 pixel-art panorama tile anchored to the bar floor
+      // Seamless 480x32 pixel-art panorama tile anchored to the bar floor.
+      // Kept at tasteful atmospheric opacity (0.48) so the colorful pets and
+      // bar widgets always stand out crisply in the foreground.
       Image {
         id: themePanorama
         visible: root.ready && root.backdrop !== "none"
@@ -1062,38 +1157,57 @@ Item {
         anchors.bottom: parent.bottom
         fillMode: Image.TileHorizontally
         smooth: parent.height !== 32
-        opacity: 0.92
+        opacity: 0.48
       }
 
       // Live animated effects layered over the pixel-art panorama:
-      // 1. Forest: glowing drifting fireflies
+      // 1. Forest: glowing drifting fireflies + softly falling woodland leaves
       Repeater {
         model: root.backdrop === "forest" ? navbarBackdrop.slotCount : 0
-        Rectangle {
+        Item {
           required property int index
-          width: 3; height: 3; radius: 1.5
-          x: index * 80 + 24 + (((root.animTick + index) & 1) ? 2 : 0)
-          y: Math.max(3, (index * 7) % Math.max(6, navbarBackdrop.height - 10))
-          color: "#ECFCCB"
-          border.width: 0.5; border.color: "#65A30D"
-          opacity: ((root.animTick + index) % 3 === 0) ? 0.95 : 0.25
+          Rectangle {
+            width: 3; height: 3; radius: 1.5
+            x: index * 80 + 24 + (((root.animTick + index) & 1) ? 2 : 0)
+            y: Math.max(3, (index * 7) % Math.max(6, navbarBackdrop.height - 10))
+            color: "#ECFCCB"
+            border.width: 0.5; border.color: "#65A30D"
+            opacity: ((root.animTick + index) % 3 === 0) ? 0.9 : 0.22
+          }
+          Rectangle {
+            visible: (index % 2) === 0
+            width: 3; height: 2; radius: 1
+            x: (index * 85 + ((root.animTick + index * 3) % 14)) % Math.max(80, Math.round(navbarBackdrop.width))
+            y: (root.animTick + index * 5) % Math.max(8, Math.round(navbarBackdrop.height - 3))
+            color: (index % 4 === 0) ? "#86EFAC" : "#FDE047"
+            opacity: 0.65
+          }
         }
       }
 
-      // 2. Mountain: softly drifting alpine mist & waterfall spray
+      // 2. Mountain: softly drifting alpine mist + gentle falling snowflakes
       Repeater {
         model: root.backdrop === "mountain" ? navbarBackdrop.slotCount : 0
-        Rectangle {
+        Item {
           required property int index
-          width: 18; height: 3; radius: 1.5
-          x: (index * 95 + root.animTick * 2) % Math.max(100, Math.round(navbarBackdrop.width))
-          y: 4 + (index % 3) * 4
-          color: "#F8FAFC"
-          opacity: 0.35
+          Rectangle {
+            width: 18; height: 3; radius: 1.5
+            x: (index * 95 + root.animTick * 2) % Math.max(100, Math.round(navbarBackdrop.width))
+            y: 4 + (index % 3) * 4
+            color: "#F8FAFC"
+            opacity: 0.28
+          }
+          Rectangle {
+            width: 2; height: 2; radius: 1
+            x: (index * 76 + ((root.animTick + index * 7) % 18)) % Math.max(80, Math.round(navbarBackdrop.width))
+            y: (root.animTick * 2 + index * 9) % Math.max(8, Math.round(navbarBackdrop.height - 3))
+            color: "#FFFFFF"
+            opacity: 0.72
+          }
         }
       }
 
-      // 3. Space: twinkling starlight pulses
+      // 3. Space: twinkling starlight pulses + periodic diagonal shooting star
       Repeater {
         model: root.backdrop === "space" ? navbarBackdrop.slotCount * 2 : 0
         Rectangle {
@@ -1102,8 +1216,20 @@ Item {
           x: index * 44 + ((index * 17) % 28)
           y: 3 + ((index * 9) % Math.max(6, navbarBackdrop.height - 10))
           color: (index & 1) ? "#FEF08A" : "#7DD3FC"
-          opacity: ((root.animTick + index) & 1) ? 0.95 : 0.15
+          opacity: ((root.animTick + index) & 1) ? 0.9 : 0.15
         }
+      }
+      Rectangle {
+        readonly property int shootStep: root.animTick % 28
+        visible: root.backdrop === "space" && shootStep < 7
+        width: 14
+        height: 1.5
+        radius: 1
+        rotation: 18
+        color: "#FEF08A"
+        opacity: 0.85 - shootStep * 0.11
+        x: Math.round(navbarBackdrop.width * 0.18 + shootStep * 22)
+        y: Math.round(2 + shootStep * 2.5)
       }
 
       // 4. Beach: animated whitewater surf foam along the shoreline
@@ -1139,6 +1265,7 @@ Item {
     // animals to eat; right-click opens the pet picker menu.
     Item {
       id: feederHitBox
+      z: 4
       visible: root.showFoodDot && !root.barHidden
       width: 18
       height: 18
@@ -1190,6 +1317,7 @@ Item {
     // with animated crumbs as the winning animal munches it.
     Item {
       id: droppedFoodItem
+      z: 1
       visible: root.foodActive && !root.barHidden
       readonly property real scaleFactor: 0.4 + 0.6 * root.foodAmount
       readonly property int baseW: root.foodKind === "bone" || root.foodKind === "fish" ? 16 : 13
@@ -1375,6 +1503,54 @@ Item {
       }
     }
 
+    // Bouncing pixel tennis ball toy tossed when Play is clicked!
+    Item {
+      id: playBallItem
+      z: 2
+      visible: root.ballActive && !root.barHidden && !root.vertical
+      width: 10
+      height: 10
+      x: Math.round(root.ballPos - width / 2)
+      y: Math.max(0, Math.round(root.barSize - height - 2 - root.ballY))
+
+      // Ground shadow that shrinks as the ball bounces higher
+      Rectangle {
+        width: Math.max(4, Math.round(8 - root.ballY * 0.25))
+        height: 2
+        radius: 1
+        color: "#000000"
+        opacity: Math.max(0.08, 0.28 - root.ballY * 0.012)
+        anchors.horizontalCenter: parent.horizontalCenter
+        y: Math.round(parent.height + root.ballY)
+      }
+
+      // Neon-lime pixel tennis ball with seam stripe & highlight
+      Rectangle {
+        anchors.fill: parent
+        radius: width / 2
+        color: "#A3E635"
+        border.width: 1.3
+        border.color: "#365314"
+
+        Rectangle {
+          width: parent.width - 3
+          height: 1.5
+          anchors.centerIn: parent
+          rotation: (root.ballPos * 4) % 360
+          color: "#FEFCE8"
+        }
+
+        Rectangle {
+          width: 2.5
+          height: 2.5
+          radius: 1.25
+          x: 2
+          y: 1.5
+          color: "#FFFFFF"
+        }
+      }
+    }
+
     Repeater {
       id: petRepeater
       model: root.characters
@@ -1385,6 +1561,7 @@ Item {
 
       Item {
         id: petItem
+        z: 3
         required property string modelData
         required property int index
 
@@ -1397,9 +1574,13 @@ Item {
         property bool showHeart: false
         property real heartProgress: 0
         property bool showAlert: false
+        property bool isDancing: false
+        property bool isSprinting: false
 
         readonly property bool isBird: modelData === "bird-blue"
           || modelData === "bird-parrot"
+        readonly property bool isFairyPixie: modelData === "fairy-pixie"
+        readonly property bool isDragon: modelData === "fairy-dragon"
         readonly property bool isFlying: petItem.isBird
           && !petItem.catSettled
           && petItem.catPose !== "sleep"
@@ -1412,7 +1593,18 @@ Item {
         property alias hitBox: hitBoxItem
 
         onMaskActiveChanged: root.maskRevision++
-        Component.onCompleted: root.maskRevision++
+        Component.onCompleted: {
+          var existing = root._actors[modelData]
+          if (existing) {
+            catPos = existing.pos
+            catPose = existing.pose
+            catBob = existing.bob
+            catLift = existing.lift
+            catSettled = existing.settled
+            animOffset = existing.animOffset
+          }
+          root.maskRevision++
+        }
 
         // Ground all land animals directly on the bottom floor of the navbar so
         // horses, cats, dogs, rats, pandas, and unicorns walk solidly on the
@@ -1443,6 +1635,59 @@ Item {
           y: Math.max(0, root.barSize - 3)
         }
 
+        // Subtle gallop dust puffs behind sprinting land animals
+        Item {
+          visible: !root.vertical && petItem.isSprinting && !petItem.isBird
+            && (petItem.catPose === "left" || petItem.catPose === "right")
+          readonly property int trailDir: petItem.catPose === "right" ? -1 : 1
+          Rectangle {
+            width: 3; height: 3; radius: 1.5
+            color: "#E7E5E4"
+            opacity: ((root.animTick + petItem.animOffset) & 1) ? 0.65 : 0.25
+            x: Math.round(sprite.x + (parent.trailDir < 0 ? -3 : sprite.width + 1))
+            y: Math.max(0, root.barSize - 4)
+          }
+          Rectangle {
+            width: 2; height: 2; radius: 1
+            color: "#D6D3D1"
+            opacity: ((root.animTick + petItem.animOffset) & 1) ? 0.30 : 0.60
+            x: Math.round(sprite.x + (parent.trailDir < 0 ? -7 : sprite.width + 5))
+            y: Math.max(0, root.barSize - 6)
+          }
+        }
+
+        // Fairy sparkle dust trailing gently behind a moving Fairy
+        Item {
+          visible: !root.vertical && petItem.isFairyPixie && !petItem.catSettled
+            && (petItem.catPose === "left" || petItem.catPose === "right")
+          readonly property int trailDir: petItem.catPose === "right" ? -1 : 1
+          Rectangle {
+            width: 2.5; height: 2.5; radius: 1.25
+            color: ((root.animTick + petItem.animOffset) & 1) ? "#FEF08A" : "#67E8F9"
+            opacity: 0.9
+            x: Math.round(sprite.x + (parent.trailDir < 0 ? -4 : sprite.width + 2))
+            y: Math.max(1, Math.round(sprite.y + sprite.height * 0.45))
+          }
+          Rectangle {
+            width: 2; height: 2; radius: 1
+            color: "#F9A8D4"
+            opacity: ((root.animTick + petItem.animOffset) & 1) ? 0.45 : 0.85
+            x: Math.round(sprite.x + (parent.trailDir < 0 ? -8 : sprite.width + 6))
+            y: Math.max(1, Math.round(sprite.y + sprite.height * 0.28))
+          }
+        }
+
+        // Tiny warm fire embers flickering behind a sprinting Dragon
+        Rectangle {
+          visible: !root.vertical && petItem.isDragon && petItem.isSprinting
+            && (petItem.catPose === "left" || petItem.catPose === "right")
+          width: 3; height: 3; radius: 1.5
+          color: ((root.animTick + petItem.animOffset) & 1) ? "#FDE047" : "#FB923C"
+          opacity: 0.9
+          x: Math.round(sprite.x + (petItem.catPose === "right" ? sprite.width + 1 : -4))
+          y: Math.max(1, Math.round(sprite.y + sprite.height * 0.42))
+        }
+
         CatSprite {
           id: sprite
 
@@ -1459,6 +1704,21 @@ Item {
 
           x: root.vertical ? Math.round(petItem.crossPos) : Math.round(petItem.catPos)
           y: root.vertical ? Math.round(petItem.catPos) : Math.round(petItem.crossPos)
+        }
+
+        // Floating music notes while dancing to active media playback.
+        Text {
+          visible: petItem.isDancing && !petItem.showHeart && !petItem.showAlert
+          readonly property int mPhase: (root.animTick + petItem.animOffset) & 1
+          textFormat: Text.PlainText
+          text: mPhase === 0 ? "♪" : "♫"
+          color: mPhase === 0 ? "#A78BFA" : "#38BDF8"
+          style: Text.Outline
+          styleColor: "#0F172A"
+          font.pixelSize: 10
+          font.bold: true
+          x: Math.round(sprite.x + sprite.width * (mPhase === 0 ? 0.58 : 0.28))
+          y: Math.max(0, Math.round(sprite.y - 2 - mPhase * 2))
         }
 
         // Floating "zzZ" bubble while curled up sleeping.

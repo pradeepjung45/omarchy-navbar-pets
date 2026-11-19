@@ -213,8 +213,9 @@ function intent(input, state) {
   // 1c. Playing together with other animals on the bar.
   if (input.play && input.play.active && isFinite(Number(input.play.target))) {
     var playTarget = clamp(Number(input.play.target), 0, maxX)
-    var playLift = Number(input.play.lift) > 0
-      ? Number(input.play.lift)
+    var hasExplicitLift = input.play.lift !== undefined && input.play.lift !== null
+    var playLift = hasExplicitLift
+      ? Math.max(0, Number(input.play.lift))
       : 0.45 * Math.abs(Math.sin(now / 120))
     if (Math.abs(input.x - playTarget) <= ARRIVE_EPS + 4) {
       return {
@@ -223,7 +224,7 @@ function intent(input, state) {
         gait: "idle",
         rest: "hold",
         pose: ((Math.floor(now / 180) & 1) === 0) ? "scratch" : "awake",
-        bob: true,
+        bob: !hasExplicitLift || playLift > 0,
         lift: playLift,
       }
     }
@@ -232,7 +233,7 @@ function intent(input, state) {
       target: playTarget,
       gait: "run",
       rest: "wait",
-      lift: Number(input.play.lift) > 0 ? Number(input.play.lift) : 0,
+      lift: hasExplicitLift ? playLift : 0,
     }
   }
 
@@ -490,7 +491,7 @@ function decide(input, state) {
           : (delta > 0 ? "right" : "left"))
     return {
       reason: want.reason, target: target, gait: want.gait, pose: state.pose,
-      lift: moveLift, snap: false, bob: want.reason === "play", pettable: false, idle: false,
+      lift: moveLift, snap: false, bob: want.reason === "play" && moveLift > 0, pettable: false, idle: false,
       wakeIn: 0, state: state,
     }
   }

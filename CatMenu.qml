@@ -24,7 +24,7 @@ PanelWindow {
   color: "transparent"
 
   exclusionMode: ExclusionMode.Ignore
-  WlrLayershell.namespace: "navbar-cat-menu"
+  WlrLayershell.namespace: "io.github.pradeepjung45.navbar-pets-menu"
   WlrLayershell.layer: WlrLayer.Overlay
   WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
 

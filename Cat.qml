@@ -29,7 +29,7 @@ Item {
   property var manifest: null
   property string omarchyPath: ""
 
-  readonly property string pluginId: manifest && manifest.id ? String(manifest.id) : "io.github.tallsam.navbar-cat"
+  readonly property string pluginId: manifest && manifest.id ? String(manifest.id) : "io.github.pradeepjung45.navbar-pets"
   readonly property string assetDir: {
     var dir = manifest && manifest.__sourceDir ? String(manifest.__sourceDir) : ""
     if (dir === "") return ""
@@ -54,18 +54,39 @@ Item {
   // Third-party plugins receive a capability-scoped PluginShellApi where
   // `shell.shellConfig` is not exposed and writes go through
   // `shell.updateEntryInline(pluginId, settings)`. We watch shell.json via
-  // FileView and apply menu changes immediately via `localOverrides`.
+  // FileView and re-parse whenever `pluginId` updates after `manifest` is
+  // injected at startup so saved pets and settings always survive reboots.
   property var fileConfig: ({})
   property var localOverrides: ({})
   property int configRevision: 0
+  property string _rawShellJson: ""
+  property bool _shellFileLoaded: false
 
   FileView {
     id: shellConfigFile
     path: Quickshell.env("HOME") + "/.config/omarchy/shell.json"
     watchChanges: true
     printErrors: false
-    onLoaded: root.loadConfigFromFile(text())
+    onLoaded: {
+      root._shellFileLoaded = true
+      root._rawShellJson = String(text() || "")
+      root.loadConfigFromFile(root._rawShellJson)
+    }
     onFileChanged: reload()
+  }
+
+  onPluginIdChanged: {
+    if (root._shellFileLoaded && root._rawShellJson !== "") {
+      root.loadConfigFromFile(root._rawShellJson)
+    } else {
+      shellConfigFile.reload()
+    }
+  }
+
+  onReadyChanged: {
+    if (ready && !root._shellFileLoaded) {
+      shellConfigFile.reload()
+    }
   }
 
   function loadConfigFromFile(raw) {
@@ -89,6 +110,8 @@ Item {
     }
     root.localOverrides = remaining
     root.configRevision++
+    root.nudge()
+    Qt.callLater(root.step)
   }
 
   readonly property var config: {
@@ -110,7 +133,8 @@ Item {
 
   readonly property real speed: {
     var rev = root.configRevision
-    return Number(config.speed) > 0 ? Number(config.speed) : 1.0
+    var s = Number(config.speed)
+    return s > 0 ? Math.max(0.25, Math.min(3.0, s)) : 1.0
   }
   readonly property bool pettable: {
     var rev = root.configRevision
@@ -130,7 +154,8 @@ Item {
   }
   readonly property int catSize: {
     var rev = root.configRevision
-    return Number(config.size) > 0 ? Number(config.size) : 16
+    var sz = Number(config.size)
+    return sz > 0 ? Math.max(12, Math.min(64, Math.round(sz))) : 24
   }
 
   // Multiple animals can roam the bar simultaneously (`characters: [...]`),
@@ -517,6 +542,18 @@ Item {
     return actor
   }
 
+  function isBirdChar(charId) {
+    return charId === "bird-blue" || charId === "bird-parrot"
+  }
+
+  function isHeavyLandChar(charId) {
+    return charId === "horse-brown"
+      || charId === "horse-white"
+      || charId === "fairy-unicorn"
+      || charId === "panda"
+      || charId === "panda-red"
+  }
+
   function step() {
     if (!catScreen || barLength <= 0) return
 
@@ -574,8 +611,9 @@ Item {
       var actorPlaying = !chasingFood && !wantsCursor && (globalPlay || (autoPlay && actor.mood === "play"))
       var actorResting = !chasingFood && !wantsCursor && !actorPlaying && actor.mood === "rest"
 
-      // Spread multiple animals around the cursor, and weave/leap smoothly at a
-      // natural middle pace during play.
+      // Spread multiple animals around the cursor, and weave smoothly during
+      // play. Only birds soar in the air; heavy land animals (horses, unicorns,
+      // pandas) gallop strictly on the ground; agile pets take tiny playful skips.
       var spread = (i - (count - 1) / 2) * (catSize + 4)
       var charPointerPos = Math.max(catSize / 2, Math.min(barLength - catSize / 2, pPos + spread))
       var centerForPlay = globalPlay ? playSpot : actor.playCenter
@@ -583,7 +621,13 @@ Item {
       var playWave = Math.sin(now / (1250 / actor.speedScale) + i * 2.15)
       var charPlayTarget = Math.max(0, Math.min(maxPos, centerForPlay + playWave * playRadius))
       var leapSin = Math.sin(now / 520 + i * 1.9)
-      var charPlayLift = leapSin > 0.62 ? ((leapSin - 0.62) / 0.38) * 0.65 : 0
+      var charIsBird = isBirdChar(charId)
+      var charIsHeavyLand = isHeavyLandChar(charId)
+      var charPlayLift = charIsBird
+        ? (leapSin > 0.35 ? ((leapSin - 0.35) / 0.65) * 0.75 : 0.25)
+        : (charIsHeavyLand
+            ? 0
+            : (leapSin > 0.80 ? ((leapSin - 0.80) / 0.20) * 0.45 : 0))
 
       var holdForClick = catMenu.open || (!actorPlaying && actor.settled && hovered)
 
@@ -614,7 +658,7 @@ Item {
           chaseCursor: chaseCursor,
           pettable: pettable,
           sleepAfter: sleepAfter,
-          pounce: pounce,
+          pounce: pounce && !charIsHeavyLand,
           rhythm: rhythm,
           avoidCenter: avoidCenter,
           stirEvery: stirEvery,
@@ -748,10 +792,18 @@ Item {
   // ------------------------------------------------------------- settings
 
   // The menu is the one thing here that writes. It touches only this plugin's
-  // own entry in shell.json, only when you pick something, and it goes through
-  // the shell's scoped `updateEntryInline` API (falling back to
-  // `mutateShellConfig` if hosted directly).
+  // own entry in shell.json, only when you pick something, and it goes strictly
+  // through the shell's scoped `updateEntryInline` API.
   function setSettings(patch) {
+    if (!root._shellFileLoaded) {
+      var raw = String(shellConfigFile.text() || "")
+      if (raw !== "") {
+        root._shellFileLoaded = true
+        root._rawShellJson = raw
+        root.loadConfigFromFile(raw)
+      }
+    }
+
     var nextOverrides = ({})
     for (var ok in root.localOverrides) nextOverrides[ok] = root.localOverrides[ok]
     for (var pk in patch) nextOverrides[pk] = patch[pk]
@@ -765,25 +817,7 @@ Item {
 
     if (shell && typeof shell.updateEntryInline === "function") {
       shell.updateEntryInline(root.pluginId, merged)
-      return
     }
-    if (!shell || typeof shell.mutateShellConfig !== "function") return
-    var id = root.pluginId
-    shell.mutateShellConfig(function (cfg) {
-      if (!Array.isArray(cfg.plugins)) cfg.plugins = []
-      var entry = null
-      for (var i = 0; i < cfg.plugins.length; i++) {
-        if (cfg.plugins[i] && String(cfg.plugins[i].id || "") === id) {
-          entry = cfg.plugins[i]
-          break
-        }
-      }
-      if (!entry) {
-        entry = { id: id }
-        cfg.plugins.push(entry)
-      }
-      for (var k in patch) entry[k] = patch[k]
-    })
   }
 
   function setSetting(key, value) {
@@ -879,8 +913,8 @@ Item {
   }
 
   function setSize(px) {
-    var val = Number(px)
-    if (!(val > 0)) return "invalid size"
+    var val = Math.round(Number(px))
+    if (!isFinite(val) || val < 12 || val > 64) return "invalid size (12..64)"
     root.setSetting("size", val)
     return String(val)
   }
@@ -897,21 +931,7 @@ Item {
 
   ShellIpc {
     id: ipcHandler
-    target: "navbar-cat"
-
-    Component.onCompleted: {
-      for (var i = IpcRegistry.handlers.length - 1; i >= 0; i--) {
-        var h = IpcRegistry.handlers[i]
-        if (h && h !== ipcHandler && h.target === "navbar-cat") {
-          h.enabled = false
-          h.target = ""
-          IpcRegistry.unregister(h)
-          if (h.parent && typeof h.parent.destroy === "function") {
-            h.parent.destroy()
-          }
-        }
-      }
-    }
+    target: root.pluginId
 
     function openMenu(): string {
       return root.openMenu()
@@ -961,7 +981,7 @@ Item {
     color: "transparent"
 
     exclusionMode: ExclusionMode.Ignore
-    WlrLayershell.namespace: "navbar-cat"
+    WlrLayershell.namespace: "io.github.pradeepjung45.navbar-pets"
     // Above the bar (which sits on Top), matching what the bar's own drag
     // ghost does when it needs to float over everything.
     WlrLayershell.layer: WlrLayer.Overlay
@@ -1033,15 +1053,15 @@ Item {
       // Seamless 480x32 pixel-art panorama tile anchored to the bar floor
       Image {
         id: themePanorama
-        visible: root.backdrop !== "none"
-        source: root.backdrop !== "none"
-          ? ("file://" + root.assetDir + "/theme-" + root.backdrop + ".png")
+        visible: root.ready && root.backdrop !== "none"
+        source: (root.ready && root.backdrop !== "none")
+          ? (root.assetDir + "/theme-" + root.backdrop + ".png")
           : ""
         width: parent.width
-        height: 32
+        height: Math.min(32, parent.height)
         anchors.bottom: parent.bottom
         fillMode: Image.TileHorizontally
-        smooth: false
+        smooth: parent.height !== 32
         opacity: 0.92
       }
 
@@ -1181,7 +1201,7 @@ Item {
         : Math.round(root.foodPos - width / 2)
       y: root.vertical
         ? Math.round(root.foodPos - height / 2)
-        : Math.round(window.stripCentre + root.catSize * 0.18 - height / 2)
+        : Math.max(0, Math.round(root.barSize - height - 1))
 
       // Fish treat (Cats)
       Item {
@@ -1378,10 +1398,14 @@ Item {
         property real heartProgress: 0
         property bool showAlert: false
 
-        readonly property bool isWinged: modelData === "bird-blue"
+        readonly property bool isBird: modelData === "bird-blue"
           || modelData === "bird-parrot"
-          || modelData === "fairy-pixie"
-          || modelData === "fairy-dragon"
+        readonly property bool isFlying: petItem.isBird
+          && !petItem.catSettled
+          && petItem.catPose !== "sleep"
+          && petItem.catPose !== "stop"
+          && petItem.catPose !== "wash"
+          && petItem.catPose !== "yawn"
 
         readonly property bool hovered: hitMouse.containsMouse
         readonly property bool maskActive: !root.barHidden && (catSettled || hovered)
@@ -1390,14 +1414,18 @@ Item {
         onMaskActiveChanged: root.maskRevision++
         Component.onCompleted: root.maskRevision++
 
-        // Keep hops & winged hover strictly inside the navbar strip (lifting
-        // upward by up to 3px rather than dropping below the navbar).
-        readonly property real wingLift: (petItem.isWinged && petItem.catPose !== "sleep" && petItem.catPose !== "stop")
-          ? (((root.animTick + petItem.animOffset) & 1) ? 2 : 1)
+        // Ground all land animals directly on the bottom floor of the navbar so
+        // horses, cats, dogs, rats, pandas, and unicorns walk solidly on the
+        // ground; only birds take flight above the floor while moving.
+        readonly property real wingLift: petItem.isFlying
+          ? (((root.animTick + petItem.animOffset) & 1) ? 3 : 2)
           : 0
-        readonly property real hopUp: Math.round(petItem.catLift * 3) + wingLift
+        readonly property real hopUp: Math.round(petItem.catLift * (petItem.isBird ? 3 : 2)) + wingLift
         readonly property int bobOffset: petItem.catBob ? (((root.animTick + petItem.animOffset) & 1) ? -1 : 0) : 0
-        readonly property real rawCrossPos: window.stripCentre - sprite.height / 2 - hopUp + bobOffset
+        readonly property real baseCrossPos: root.vertical
+          ? (window.stripCentre - sprite.width / 2)
+          : (root.barSize - sprite.height)
+        readonly property real rawCrossPos: baseCrossPos - hopUp + bobOffset
         readonly property real crossPos: Math.max(
           Math.min(0, root.barSize - sprite.height),
           Math.min(Math.max(0, root.barSize - sprite.height), rawCrossPos)
@@ -1406,13 +1434,13 @@ Item {
         // Subtle ground shadow under the pet's paws on the bar floor.
         Rectangle {
           visible: !root.vertical
-          width: Math.max(7, Math.round(root.catSize * (0.58 - (petItem.catLift + petItem.wingLift * 0.15) * 0.15)))
+          width: Math.max(6, Math.round(root.catSize * (petItem.isFlying ? 0.36 : (0.58 - petItem.catLift * 0.12))))
           height: 3
           radius: 1.5
           color: "#000000"
-          opacity: petItem.isWinged ? 0.16 : 0.22
+          opacity: petItem.isFlying ? 0.14 : 0.22
           x: Math.round(sprite.x + (sprite.width - width) / 2)
-          y: Math.min(root.barSize - 3, Math.round(window.stripCentre + sprite.height / 2 - 2))
+          y: Math.max(0, root.barSize - 3)
         }
 
         CatSprite {

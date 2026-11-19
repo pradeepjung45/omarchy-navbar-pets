@@ -59,6 +59,19 @@ rule that governs petting.
 Menu choices are written to this plugin's own entry in `shell.json` through the
 shell's own config mechanism, so they survive a restart.
 
+### IPC commands
+
+Control Navbar Pets from scripts or keybindings via its namespaced IPC target (`io.github.pradeepjung45.navbar-pets`):
+
+```bash
+omarchy-shell io.github.pradeepjung45.navbar-pets openMenu
+omarchy-shell io.github.pradeepjung45.navbar-pets feed
+omarchy-shell io.github.pradeepjung45.navbar-pets play
+omarchy-shell io.github.pradeepjung45.navbar-pets setCharacters cat-ginger,dog-golden,panda,bird-blue
+omarchy-shell io.github.pradeepjung45.navbar-pets setBackdrop mountain
+omarchy-shell io.github.pradeepjung45.navbar-pets setSize 24
+```
+
 ## Characters
 
 Twenty characters ship across seven groups, all sharing the same 32 frames:
@@ -78,15 +91,6 @@ Twenty characters ship across seven groups, all sharing the same 32 frames:
 
 ```bash
 omarchy plugin add https://github.com/pradeepjung45/omarchy-navbar-pets.git --enable --yes
-```
-
-Or by hand:
-
-```bash
-git clone https://github.com/pradeepjung45/omarchy-navbar-pets.git \
-  ~/.config/omarchy/plugins/io.github.pradeepjung45.navbar-pets
-omarchy-shell shell rescanPlugins
-omarchy plugin enable io.github.pradeepjung45.navbar-pets
 ```
 
 ### Requirements

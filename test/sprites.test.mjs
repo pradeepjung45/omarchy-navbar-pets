@@ -3,6 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, existsSync } from "node:fs";
+import { inflateSync } from "node:zlib";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -69,4 +70,66 @@ test("every pose points to valid frame indices", () => {
       assert.ok(Number.isInteger(idx) && idx >= 0 && idx < Frames.COUNT, `${pose} frame ${idx}`);
     }
   }
+});
+
+function readRgbaPixels(path) {
+  const buf = readFileSync(path);
+  let pos = 8;
+  let width = 0;
+  let height = 0;
+  const chunks = [];
+  while (pos < buf.length) {
+    const len = buf.readUInt32BE(pos);
+    const tag = buf.subarray(pos + 4, pos + 8).toString("ascii");
+    const data = buf.subarray(pos + 8, pos + 8 + len);
+    pos += 12 + len;
+    if (tag === "IHDR") {
+      width = data.readUInt32BE(0);
+      height = data.readUInt32BE(4);
+    } else if (tag === "IDAT") {
+      chunks.push(data);
+    }
+  }
+  const raw = inflateSync(Buffer.concat(chunks));
+  return { width, height, raw, stride: 1 + width * 4 };
+}
+
+function frameBottomY(png, frameIdx) {
+  let maxY = -1;
+  for (let y = 0; y < png.height; y++) {
+    const rowOff = y * png.stride + 1;
+    for (let x = frameIdx * 32; x < (frameIdx + 1) * 32; x++) {
+      if (png.raw[rowOff + x * 4 + 3] > 0) maxY = y;
+    }
+  }
+  return maxY;
+}
+
+test("only birds fly high in movement frames; horses and land animals stay grounded", () => {
+  const flyers = new Set(["bird-blue", "bird-parrot"]);
+  const hoverers = new Set(["fairy-pixie"]);
+  const left1 = Frames.INDEX.left1;
+  const stop = Frames.INDEX.mati2;
+
+  for (const entry of Frames.CATALOG) {
+    if (!entry.colorful) continue;
+    const png = readRgbaPixels(join(REPO, "assets", `${entry.id}32-color.png`));
+    const stopBottom = frameBottomY(png, stop);
+    const walkBottom = frameBottomY(png, left1);
+    assert.ok(stopBottom >= 27, `${entry.id} perched/stopped frame should stand on ground (got y=${stopBottom})`);
+    if (flyers.has(entry.id)) {
+      assert.ok(walkBottom <= 21, `${entry.id} flight frame should fly high above ground (got y=${walkBottom})`);
+    } else if (hoverers.has(entry.id)) {
+      assert.ok(walkBottom >= 24 && walkBottom <= 27, `${entry.id} hover frame should flutter low (got y=${walkBottom})`);
+    } else {
+      assert.ok(walkBottom >= 27, `${entry.id} walking frame must stay grounded, not fly (got y=${walkBottom})`);
+    }
+  }
+});
+
+test("Cat.qml uses its own namespaced IPC target and never tampers with IpcRegistry", () => {
+  const qml = readFileSync(join(REPO, "Cat.qml"), "utf8");
+  assert.ok(!qml.includes("IpcRegistry"), "plugin must not access or mutate Omarchy's shared IpcRegistry");
+  assert.ok(qml.includes("target: root.pluginId"), "ShellIpc must use the plugin's own namespaced target");
+  assert.ok(!qml.includes('"file://" + root.assetDir'), "assetDir already includes file:// prefix");
 });

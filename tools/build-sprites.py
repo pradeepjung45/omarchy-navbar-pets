@@ -145,6 +145,66 @@ def write_alpha_sheet(path, grids, cell):
     return write_png_rgba(path, width, cell, rows)
 
 
+EMPTY_PX = ((0, 0, 0, 0), "empty")
+
+FLYING_CHARACTERS = {"bird-blue", "bird-parrot"}
+HOVER_CHARACTERS = {"fairy-pixie"}
+PERCHED_FRAMES = {
+    "mati2", "jare2", "kaki1", "kaki2", "mati3",
+    "sleep1", "sleep2", "awake", "down1", "down2",
+}
+STRIDE_UP_FRAMES = {
+    "left2", "right2", "upleft2", "upright2", "dwleft2", "dwright2",
+}
+
+
+def shift_grid_y(grid, dy):
+    if dy == 0:
+        return grid
+    out = [[EMPTY_PX for _ in range(SIZE)] for _ in range(SIZE)]
+    for y in range(SIZE):
+        ny = y + dy
+        if 0 <= ny < SIZE:
+            out[ny] = list(grid[y])
+    return out
+
+
+def align_frame_baseline(cid, frame_name, grid):
+    """Align sprite feet to a consistent ground baseline (y=29 in 32x32).
+
+    Only birds lift off into the air during movement frames; all land animals
+    (horses, unicorns, cats, dogs, rats, pandas, dragons) keep their hooves/paws
+    firmly grounded across every pose so they never appear to fly.
+    """
+    max_y = -1
+    min_y = SIZE
+    for y in range(SIZE):
+        for x in range(SIZE):
+            rgba, role = grid[y][x]
+            if rgba[3] > 0 and role != "zzz":
+                if y > max_y:
+                    max_y = y
+                if y < min_y:
+                    min_y = y
+    if max_y < 0:
+        return grid
+
+    if cid in FLYING_CHARACTERS and frame_name not in PERCHED_FRAMES:
+        target_y = 18 if frame_name in STRIDE_UP_FRAMES else 19
+    elif cid in HOVER_CHARACTERS and frame_name not in PERCHED_FRAMES:
+        target_y = 25 if frame_name in STRIDE_UP_FRAMES else 26
+    else:
+        target_y = 28 if frame_name in STRIDE_UP_FRAMES else 29
+
+    dy = target_y - max_y
+    # Never clip pixels off the top or bottom of the 32x32 cell.
+    if min_y + dy < 0:
+        dy = -min_y
+    if max_y + dy >= SIZE:
+        dy = (SIZE - 1) - max_y
+    return shift_grid_y(grid, dy)
+
+
 def write_color_sheet(path, tagged_grids, cell):
     width = cell * len(tagged_grids)
     rows = []
@@ -181,7 +241,11 @@ def main():
         if not entry["colorful"]:
             continue
         cid = entry["id"]
-        frames32 = build_character_frames(VENDOR, cid, FRAMES)
+        raw_frames32 = build_character_frames(VENDOR, cid, FRAMES)
+        frames32 = [
+            align_frame_baseline(cid, fname, grid)
+            for fname, grid in zip(FRAMES, raw_frames32)
+        ]
         frames16 = [downsample_16(g) for g in frames32]
         written += [
             write_color_sheet(ASSETS / f"{cid}32-color.png", frames32, 32),

@@ -879,3 +879,17 @@ test("play: animals run to the play spot and hop playfully when together", () =>
   assert.equal(hopping.bob, true);
   assert.ok(hopping.lift > 0, "playing animals should hop");
 });
+
+test("play: grounded land animals stay on the ground when lift is explicitly 0", () => {
+  const galloping = decide({ play: { active: true, target: 700, lift: 0 }, x: 200 });
+  assert.equal(galloping.reason, "play");
+  assert.equal(galloping.gait, "run");
+  assert.equal(galloping.lift, 0, "grounded land animals must not lift off while running");
+  assert.equal(galloping.bob, false, "grounded land animals must not bob off the floor while running");
+  assert.equal(galloping.pose, "right", "grounded land animals must not use aerial leap poses");
+
+  const arrived = decide({ play: { active: true, target: 700, lift: 0 }, x: 700, now: 10_100 });
+  assert.equal(arrived.reason, "play");
+  assert.equal(arrived.lift, 0, "grounded land animals must stay grounded at play spot");
+  assert.equal(arrived.bob, false);
+});

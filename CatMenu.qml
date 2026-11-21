@@ -14,13 +14,14 @@ PanelWindow {
   id: menu
 
   property var cat: null
+  property var menuScreen: null
   property bool open: false
   property real anchorPos: 0
 
   signal chose(string key, var value)
 
   visible: open && cat !== null
-  screen: cat ? cat.catScreen : null
+  screen: menuScreen ? menuScreen : (cat ? cat.catScreen : null)
   color: "transparent"
 
   exclusionMode: ExclusionMode.Ignore
@@ -323,6 +324,62 @@ PanelWindow {
         }
 
         Row {
+          visible: menu.cat && menu.cat.backdrop !== "none" && !menu.cat.barIsTranslucent
+          spacing: Style.space(4)
+
+          PlainText {
+            anchors.verticalCenter: parent.verticalCenter
+            text: "Style"
+            opacity: 0.55
+            rightPadding: Style.space(4)
+          }
+
+          Repeater {
+            model: [
+              { label: "Clear Zones", val: "clear-zones" },
+              { label: "Horizon", val: "horizon" },
+              { label: "Full", val: "full" }
+            ]
+
+            Chip {
+              required property var modelData
+              label: modelData.label
+              activeColor: "#2563EB"
+              active: (menu.cat ? menu.cat.backdropStyle : "clear-zones") === modelData.val
+              onTapped: menu.chose("backdropStyle", modelData.val)
+            }
+          }
+        }
+
+        Row {
+          visible: menu.cat && menu.cat.backdrop !== "none"
+          spacing: Style.space(4)
+
+          PlainText {
+            anchors.verticalCenter: parent.verticalCenter
+            text: "Fade"
+            opacity: 0.55
+            rightPadding: Style.space(4)
+          }
+
+          Repeater {
+            model: [
+              { label: "Subtle", val: 0.28 },
+              { label: "Balanced", val: 0.55 },
+              { label: "Vivid", val: 0.78 }
+            ]
+
+            Chip {
+              required property var modelData
+              label: modelData.label
+              activeColor: "#0D9488"
+              active: menu.cat && Math.abs(menu.cat.backdropOpacity - modelData.val) < 0.08
+              onTapped: menu.chose("backdropOpacity", modelData.val)
+            }
+          }
+        }
+
+        Row {
           spacing: Style.space(4)
 
           PlainText {
@@ -345,6 +402,15 @@ PanelWindow {
                 menu.open = false
               }
             }
+          }
+        }
+
+        ToggleRow {
+          width: parent.width
+          label: "keep clock & icons clear"
+          active: menu.cat && menu.cat.avoidWidgets
+          onTapped: {
+            menu.chose("avoidWidgets", !(menu.cat && menu.cat.avoidWidgets))
           }
         }
 

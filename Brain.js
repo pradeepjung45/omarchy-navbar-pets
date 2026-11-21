@@ -100,23 +100,74 @@ function clamp(value, low, high) {
 // This is a guess about layout, not knowledge of it: nothing exposes widget
 // geometry. `avoidCenter` is the fraction of the bar to keep clear, and 0
 // turns the whole idea off for anyone whose clock lives elsewhere.
-function pickSpot(state, maxX, barLength, avoid) {
+function pickSpot(state, maxX, barLength, avoid, avoidEdges) {
   if (maxX <= 0) return 0
-  if (!(avoid > 0)) return nextRandom(state) * maxX
+  var leftPad = avoidEdges && avoidEdges.left > 0 ? barLength * avoidEdges.left : 0
+  var rightPad = avoidEdges && avoidEdges.right > 0 ? barLength * avoidEdges.right : 0
+  var minX = Math.min(maxX, Math.max(0, leftPad))
+  var limX = Math.max(minX, maxX - rightPad)
+
+  if (!(avoid > 0)) {
+    if (limX > minX) return minX + nextRandom(state) * (limX - minX)
+    return nextRandom(state) * maxX
+  }
 
   var middle = maxX / 2
   var halfGap = (barLength * avoid) / 2
   var lowEnd = middle - halfGap
   var highStart = middle + halfGap
 
-  var lowSpan = Math.max(0, lowEnd)
-  var highSpan = Math.max(0, maxX - highStart)
+  var lowStart = minX
+  var lowSpan = Math.max(0, lowEnd - lowStart)
+  var highSpan = Math.max(0, limX - highStart)
+
+  // Fall back to full bar outside center if edge margins squeeze corridors out.
+  if (lowSpan + highSpan <= 0) {
+    lowStart = 0
+    lowSpan = Math.max(0, lowEnd)
+    highSpan = Math.max(0, maxX - highStart)
+  }
   // A bar too narrow to have an outside falls back to anywhere at all, rather
   // than leaving the cat with nowhere legal to stand.
   if (lowSpan + highSpan <= 0) return nextRandom(state) * maxX
 
   var roll = nextRandom(state) * (lowSpan + highSpan)
-  return roll < lowSpan ? roll : highStart + (roll - lowSpan)
+  return roll < lowSpan ? (lowStart + roll) : highStart + (roll - lowSpan)
+}
+
+// If a drowsy pet is currently standing directly on top of the left workspaces,
+// center clock, or right battery/tray icons, steer it smoothly to the nearest
+// open corridor so it curls up beside widgets instead of covering them.
+function safeRestTarget(x, maxX, barLength, avoid, avoidEdges) {
+  if (maxX <= 0 || !avoidEdges) return x
+  var minX = Math.min(maxX, Math.max(0, barLength * (avoidEdges.left || 0)))
+  var limX = Math.max(minX, maxX - barLength * (avoidEdges.right || 0))
+  var middle = maxX / 2
+  var halfGap = (barLength * (avoid > 0 ? avoid : 0.24)) / 2
+  var lowEnd = Math.max(minX, middle - halfGap)
+  var highStart = Math.min(limX, middle + halfGap)
+
+  if (x >= minX && x <= lowEnd) return x
+  if (x >= highStart && x <= limX) return x
+
+  var candidates = []
+  if (lowEnd > minX + 4) {
+    candidates.push(clamp(x, minX, lowEnd))
+  }
+  if (limX > highStart + 4) {
+    candidates.push(clamp(x, highStart, limX))
+  }
+  if (candidates.length === 0) return x
+  var best = candidates[0]
+  var bestDist = Math.abs(x - best)
+  for (var i = 1; i < candidates.length; i++) {
+    var d = Math.abs(x - candidates[i])
+    if (d < bestDist) {
+      bestDist = d
+      best = candidates[i]
+    }
+  }
+  return best
 }
 
 // Cats are crepuscular: quiet overnight, busiest around dawn and dusk. This
@@ -295,10 +346,12 @@ function intent(input, state) {
   // well as from plain idleness — and it should rouse itself from any of them.
   // It can only fire when a stir is actually booked, and a stir is only ever
   // booked by falling asleep.
+  var avoidEdges = config.avoidWidgets === true ? { left: 0.13, right: 0.22 } : null
+
   if (state.stirUntil !== null && state.stirUntil !== undefined) {
     if (now < state.stirUntil) {
       if (state.wanderTarget === null || state.wanderTarget === undefined) {
-        state.wanderTarget = pickSpot(state, maxX, input.barLength, config.avoidCenter)
+        state.wanderTarget = pickSpot(state, maxX, input.barLength, config.avoidCenter, avoidEdges)
       }
       return {
         reason: "stir",
@@ -314,7 +367,7 @@ function intent(input, state) {
       && now >= state.nextStirAt) {
     state.nextStirAt = null
     state.stirUntil = now + (config.stirFor || 25) * 1000
-    state.wanderTarget = pickSpot(state, maxX, input.barLength, config.avoidCenter)
+    state.wanderTarget = pickSpot(state, maxX, input.barLength, config.avoidCenter, avoidEdges)
     return {
       reason: "stir",
       target: state.wanderTarget,
@@ -341,12 +394,16 @@ function intent(input, state) {
   }
 
   // 6. On AC power (or an individual animal taking a solo rest break) — get
-  //    drowsy, and settle wherever it happens to be.
+  //    drowsy, and settle in a clear corridor (or wherever it stands when
+  //    avoidWidgets is off).
   if (input.soloRest === true || (reactions.charging !== false && input.charging)) {
+    var restSpot = avoidEdges
+      ? safeRestTarget(input.x, maxX, input.barLength, config.avoidCenter, avoidEdges)
+      : input.x
     return {
       reason: input.soloRest === true ? "rest" : "charging",
-      target: input.x,
-      gait: "idle",
+      target: restSpot,
+      gait: Math.abs(restSpot - input.x) > ARRIVE_EPS ? "walk" : "idle",
       rest: "chain",
       sleepy: true,
     }
@@ -355,10 +412,13 @@ function intent(input, state) {
   // 7. Nobody has touched the pointer in a long while.
   if (now - input.lastPointerMoveAt
       > (config.sleepAfter || 180) * 1000 * rhythm.sleepAfterScale) {
+    var sleepSpot = avoidEdges
+      ? safeRestTarget(input.x, maxX, input.barLength, config.avoidCenter, avoidEdges)
+      : input.x
     return {
       reason: "idle-sleep",
-      target: input.x,
-      gait: "idle",
+      target: sleepSpot,
+      gait: Math.abs(sleepSpot - input.x) > ARRIVE_EPS ? "walk" : "idle",
       rest: "chain",
       sleepy: true,
     }
@@ -367,7 +427,7 @@ function intent(input, state) {
   // 8. Nothing in particular. Wander, and re-roll once the cat has finished
   //    dawdling wherever it arrived.
   if (state.wanderTarget === null || state.wanderTarget === undefined) {
-    state.wanderTarget = pickSpot(state, maxX, input.barLength, config.avoidCenter)
+    state.wanderTarget = pickSpot(state, maxX, input.barLength, config.avoidCenter, avoidEdges)
   }
   return {
     reason: "wander",

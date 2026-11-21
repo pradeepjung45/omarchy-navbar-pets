@@ -148,7 +148,7 @@ Menu choices are saved automatically to your plugin's inline entry in `~/.config
       "sleepAfter": 180,
       "stirEvery": 150,
       "stirFor": 25,
-      "monitor": "focused",
+      "monitor": "all",
       "reactions": {
         "music": true,
         "charging": true,
@@ -178,7 +178,7 @@ Menu choices are saved automatically to your plugin's inline entry in `~/.config
 | `sleepAfter` | `180` | Seconds of pointer stillness before all pets fall asleep |
 | `stirEvery` | `150` | Average seconds between brief stirs while sleeping |
 | `stirFor` | `25` | Seconds a stirring pet wanders before curling back up |
-| `monitor` | `"focused"` | `"focused"` to follow your active monitor, or pin an output name |
+| `monitor` | `"all"` | `"all"` to appear on every connected monitor's bar, `"focused"` to follow focus, or pin an output name |
 | `reactions` | all `true` | Toggle `music`, `charging`, `workspace`, `notification`, and `theme` individually |
 
 ---

@@ -893,3 +893,34 @@ test("play: grounded land animals stay on the ground when lift is explicitly 0",
   assert.equal(arrived.lift, 0, "grounded land animals must stay grounded at play spot");
   assert.equal(arrived.bob, false);
 });
+
+test("avoidWidgets steers resting pets out of clock, workspace, and battery zones", () => {
+  const fromClock = decide({
+    x: 500,
+    soloRest: true,
+    config: {
+      chaseCursor: true,
+      pettable: true,
+      sleepAfter: 180,
+      avoidCenter: 0.24,
+      avoidWidgets: true,
+      reactions: { music: true, charging: true, workspace: true },
+    },
+  });
+  assert.equal(fromClock.reason, "rest");
+  assert.ok(fromClock.target <= 380 || fromClock.target >= 610, `expected pet to step clear of clock, got ${fromClock.target}`);
+
+  const fromBattery = decide({
+    x: 940,
+    soloRest: true,
+    config: {
+      chaseCursor: true,
+      pettable: true,
+      sleepAfter: 180,
+      avoidCenter: 0.24,
+      avoidWidgets: true,
+      reactions: { music: true, charging: true, workspace: true },
+    },
+  });
+  assert.ok(fromBattery.target <= 780, `expected pet to step clear of right icons, got ${fromBattery.target}`);
+});
